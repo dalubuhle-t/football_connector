@@ -1,6 +1,5 @@
 from flask import Flask, jsonify
 import requests
-import urllib
 import os
 from dotenv import load_dotenv
 
@@ -24,17 +23,12 @@ def fixtures_today():
     return jsonify(response.json())
 
 
-
 @app.route("/fixtures/live")
 def fixtures_live():
     url = f"{BASE_URL}/fixtures?live=all"
     response = requests.get(url, headers=headers)
     return jsonify(response.json())
 
-
-@app.route("/")
-def home():
-    return {"status": "running", "message": "Football connector live ✅"}
 
 @app.route("/routes")
 def list_routes():
@@ -47,8 +41,9 @@ def list_routes():
         methods = ','.join(rule.methods)
         line = urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}")
         output.append(line)
-    return {"available_routes": output}
+    return jsonify({"available_routes": output})
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
