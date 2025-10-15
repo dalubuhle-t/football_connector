@@ -53,6 +53,15 @@ def list_routes():
         line = urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}")
         output.append(line)
     return {"available_routes": output}
+{
+  "available_routes": [
+    "static: GET,HEAD,OPTIONS /static/<path:filename>",
+    "home: GET,HEAD,OPTIONS /",
+    "list_routes: GET,HEAD,OPTIONS /routes",
+    "get_fixtures_today: GET,HEAD,OPTIONS /fixtures/today",
+    ...
+  ]
+}
 
 
 if __name__ == "__main__":
