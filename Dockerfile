@@ -1,5 +1,5 @@
 # Use an official lightweight Python runtime as a parent image
-FROM python:3.14-64
+FROM python:3.14.0
 
 # Prevent Python from writing .pyc files and enable stdout/stderr flushing
 ENV PYTHONDONTWRITEBYTECODE=1
