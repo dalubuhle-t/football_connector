@@ -18,7 +18,7 @@ def home():
 
 @app.route("/fixtures/today")
 def fixtures_today():
-    url = f"{BASE_URL}/fixtures?date=2025-10-12"
+    url = f"{BASE_URL}/fixtures?date=2025-10-15"
     response = requests.get(url, headers=headers)
     return jsonify(response.json())
 
