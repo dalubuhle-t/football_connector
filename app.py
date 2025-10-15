@@ -7,92 +7,136 @@ from datetime import datetime
 load_dotenv()
 app = Flask(__name__)
 
-# --- Configuration ---
-API_KEY = os.getenv("API_FOOTBALL_KEY")
-BASE_URL = "https://v3.football.api-sports.io"
-HEADERS = {"x-apisports-key": API_KEY}
+# Base connector to your live Render API
+CONNECTOR_URL = "https://football-connector-1.onrender.com"
 
-# --- Utility: Example Prediction Logic ---
-def generate_prediction(fixture):
-    """
-    Simplified hybrid Poisson + Elo simulation placeholder.
-    Returns a dict with pre-match prediction markets.
-    """
-    home_team = fixture.get("teams", {}).get("home", {}).get("name", "Home")
-    away_team = fixture.get("teams", {}).get("away", {}).get("name", "Away")
+# Utility: Safe connector fetch
+def fetch_from_connector(endpoint, params=None):
+    try:
+        response = requests.get(f"{CONNECTOR_URL}{endpoint}", params=params, timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e), "source": endpoint}
 
-    # Example probability logic (replace with full UFP v2.0 logic as needed)
-    home_prob = 0.55
-    draw_prob = 0.20
-    away_prob = 0.25
-
-    # Convert probabilities to decimal odds
-    home_odds = round(1 / home_prob, 2)
-    draw_odds = round(1 / draw_prob, 2)
-    away_odds = round(1 / away_prob, 2)
-
-    return {
-        "fixture": f"{home_team} vs {away_team}",
-        "1X2": {
-            "home_win": {"probability": home_prob, "odds": home_odds},
-            "draw": {"probability": draw_prob, "odds": draw_odds},
-            "away_win": {"probability": away_prob, "odds": away_odds}
-        },
-        "BTTS": {"yes": 0.6, "no": 0.4},
-        "Over/Under 2.5": {"over": 0.55, "under": 0.45},
-        "Correct Score (most likely)": "1-0",
-        "Best Value Bet": "Home Win",
-        "Hidden Upset Angle": "Low chance away win, high variance possible"
-    }
-
-# --- Routes ---
 
 @app.route("/")
 def home():
-    return jsonify({"status": "Football API Connector Running ✅"})
+    return jsonify({
+        "status": "UFP Connector Live ✅",
+        "source": CONNECTOR_URL,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    })
+
 
 @app.route("/fixtures/today")
 def fixtures_today():
-    today_str = datetime.today().strftime("%Y-%m-%d")
-    url = f"{BASE_URL}/fixtures?date={today_str}"
-    response = requests.get(url, headers=HEADERS)
-    return jsonify(response.json())
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    data = fetch_from_connector("/fixtures", {"date": today})
+    return jsonify({"date": today, "fixtures": data})
+
 
 @app.route("/fixtures/live")
 def fixtures_live():
-    url = f"{BASE_URL}/fixtures?live=all"
-    response = requests.get(url, headers=HEADERS)
-    return jsonify(response.json())
+    data = fetch_from_connector("/fixtures/live")
+    return jsonify(data)
 
-@app.route("/predict/top/<int:n>")
-def predict_top_matches(n):
-    """
-    Fetch today's fixtures and return top N high-confidence predictions.
-    """
-    today_str = datetime.today().strftime("%Y-%m-%d")
-    url = f"{BASE_URL}/fixtures?date={today_str}"
-    response = requests.get(url, headers=HEADERS)
-    data = response.json().get("response", [])
-
-    # Generate predictions for top N fixtures
-    predictions = [generate_prediction(fix) for fix in data[:n]]
-    return jsonify({"top_predictions": predictions})
 
 @app.route("/routes")
-def list_routes():
-    """
-    Display all registered routes in this Flask app.
-    """
+def routes():
     import urllib
     output = []
     for rule in app.url_map.iter_rules():
-        methods = ','.join(rule.methods)
-        line = urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}")
-        output.append(line)
+        methods = ",".join(rule.methods)
+        output.append(urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}"))
     return jsonify({"available_routes": output})
 
-# --- Run App ---
+
+# ==========================================================
+# 🔹 UFP PREMATCH ANALYSIS ENGINE
+# ==========================================================
+@app.route("/ufp/analyze/<int:fixture_id>")
+def analyze_fixture(fixture_id):
+    """
+    Combines fixture info, form, injuries, and player stats
+    into a simplified probability model output.
+    """
+    # Step 1: Fetch Fixture Details
+    fixture = fetch_from_connector("/fixtures", {"id": fixture_id})
+    if not fixture or "response" not in fixture or len(fixture["response"]) == 0:
+        return jsonify({"error": "Fixture not found", "fixture_id": fixture_id})
+
+    fixture_data = fixture["response"][0]
+    home = fixture_data["teams"]["home"]
+    away = fixture_data["teams"]["away"]
+    home_id, away_id = home["id"], away["id"]
+
+    # Step 2: Fetch Supporting Data
+    home_form = fetch_from_connector("/teams/statistics", {"team": home_id})
+    away_form = fetch_from_connector("/teams/statistics", {"team": away_id})
+    home_inj = fetch_from_connector("/injuries", {"team": home_id})
+    away_inj = fetch_from_connector("/injuries", {"team": away_id})
+
+    # Step 3: Simplified UFP Calculation
+    try:
+        home_recent = home_form["response"].get("form", "")
+        away_recent = away_form["response"].get("form", "")
+        home_win_ratio = home_recent.count("W") / max(1, len(home_recent))
+        away_win_ratio = away_recent.count("W") / max(1, len(away_recent))
+    except Exception:
+        home_win_ratio = away_win_ratio = 0.5
+
+    injury_factor = 1 - (len(home_inj.get("response", [])) * 0.05)
+    away_injury_factor = 1 - (len(away_inj.get("response", [])) * 0.05)
+
+    # Weighted probabilities
+    home_prob = round((home_win_ratio * 0.6 + injury_factor * 0.4) * 100, 2)
+    away_prob = round((away_win_ratio * 0.6 + away_injury_factor * 0.4) * 100, 2)
+    draw_prob = round(100 - ((home_prob + away_prob) / 2), 2)
+
+    # Normalize
+    total = home_prob + away_prob + draw_prob
+    home_prob = round((home_prob / total) * 100, 2)
+    draw_prob = round((draw_prob / total) * 100, 2)
+    away_prob = round((away_prob / total) * 100, 2)
+
+    # Over/Under and BTTS estimation
+    avg_goals = (home_form["response"].get("goals", {}).get("for", {}).get("average", {}).get("total", 1.2)
+                 + away_form["response"].get("goals", {}).get("for", {}).get("average", {}).get("total", 1.1)) / 2
+    over25_prob = min(95, max(40, avg_goals * 30))
+    btts_prob = min(90, max(35, (avg_goals * 28)))
+
+    # Step 4: Final Structured UFP Output
+    prediction = {
+        "fixture_id": fixture_id,
+        "match": f"{home['name']} vs {away['name']}",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "probabilities": {
+            "home_win_%": home_prob,
+            "draw_%": draw_prob,
+            "away_win_%": away_prob,
+            "BTTS_%": btts_prob,
+            "Over_2.5_%": over25_prob
+        },
+        "recommendations": {
+            "value_bet": "Over 2.5 Goals" if over25_prob > 60 else "BTTS",
+            "safe_bet": "Double Chance (1X)" if home_prob > 50 else "X2",
+            "high_risk": "Correct Score 2-1" if home_prob > away_prob else "1-2"
+        },
+        "layers_used": {
+            "form": True,
+            "injuries": True,
+            "goals": True
+        }
+    }
+
+    return jsonify(prediction)
+
+
+# ==========================================================
+# Run Server
+# ==========================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
 
