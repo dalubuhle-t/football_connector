@@ -41,27 +41,19 @@ def fixtures_by_league(league_id):
 def home():
     return {"status": "running", "message": "Football connector live ✅"}
 
+import urllib
+
 @app.route("/routes")
 def list_routes():
     """
     Display all registered routes in this Flask app
     """
-    import urllib
     output = []
     for rule in app.url_map.iter_rules():
         methods = ','.join(rule.methods)
         line = urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}")
         output.append(line)
     return {"available_routes": output}
-{
-  "available_routes": [
-    "static: GET,HEAD,OPTIONS /static/<path:filename>",
-    "home: GET,HEAD,OPTIONS /",
-    "list_routes: GET,HEAD,OPTIONS /routes",
-    "get_fixtures_today: GET,HEAD,OPTIONS /fixtures/today",
-    ...
-  ]
-}
 
 
 if __name__ == "__main__":
