@@ -23,6 +23,7 @@ def fixtures_today():
     return jsonify(response.json())
 
 
+
 @app.route("/fixtures/live")
 def fixtures_live():
     url = f"{BASE_URL}/fixtures?live=all"
@@ -35,6 +36,23 @@ def fixtures_by_league(league_id):
     url = f"{BASE_URL}/fixtures?league={league_id}&next=10"
     response = requests.get(url, headers=headers)
     return jsonify(response.json())
+
+@app.route("/")
+def home():
+    return {"status": "running", "message": "Football connector live ✅"}
+
+@app.route("/routes")
+def list_routes():
+    """
+    Display all registered routes in this Flask app
+    """
+    import urllib
+    output = []
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(rule.methods)
+        line = urllib.parse.unquote(f"{rule.endpoint}: {methods} {rule}")
+        output.append(line)
+    return {"available_routes": output}
 
 
 if __name__ == "__main__":
